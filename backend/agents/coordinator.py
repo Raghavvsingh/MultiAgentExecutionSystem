@@ -35,7 +35,7 @@ class CoordinatorAgent(BaseAgent):
         self.validator = ValidatorAgent(run_id)
         
         self.max_retries = settings.max_retries
-        self.min_validation_score = 7.0  # 70% minimum confidence
+        self.min_validation_score = 6.5  # 65% - balanced for v8
         
         # Run state
         self.tasks: List[Dict[str, Any]] = []
@@ -213,7 +213,9 @@ class CoordinatorAgent(BaseAgent):
             self.task_statuses[task_id] = TaskStatusEnum.IN_PROGRESS.value
             await self._emit_state_change()
             
-            result = await self._execute_single_task(next_task)
+            # Get retry feedback if this is a retry
+            retry_feedback = self._get_retry_feedback(task_id)
+            result = await self._execute_single_task(next_task, retry_feedback)
             
             # Process result
             decision = await self._make_decision(task_id, result)
@@ -221,7 +223,7 @@ class CoordinatorAgent(BaseAgent):
             if decision.action == CoordinatorAction.PROCEED:
                 self.task_statuses[task_id] = TaskStatusEnum.COMPLETED.value
                 self.task_outputs[task_id] = result.get("output", {})
-                await self._emit_log(f"Task {task_id} completed", task_id=task_id)
+                await self._emit_log(f"Task {task_id} completed (score: {result.get('validation', {}).get('score', 'N/A')})", task_id=task_id)
                 
             elif decision.action == CoordinatorAction.RETRY:
                 self.task_retries[task_id] = self.task_retries.get(task_id, 0) + 1
@@ -250,19 +252,20 @@ class CoordinatorAgent(BaseAgent):
                 self._skip_remaining_tasks()
                 return {"success": True, "warning": "Cost limit reached"}
     
-    async def _execute_single_task(self, task: Dict[str, Any]) -> Dict[str, Any]:
-        """Execute a single task with validation (v2: pass classification)."""
+    async def _execute_single_task(self, task: Dict[str, Any], retry_feedback: str = "") -> Dict[str, Any]:
+        """Execute a single task with validation (v3: pass retry feedback)."""
         task_id = task["id"]
         
         # Check if should use summarization mode
         use_summarization = self.cost_tracker.should_use_summarization()
         
-        # Execute with classification context
+        # Execute with classification context and retry feedback
         exec_result = await self.executor.execute({
             "task": task,
             "previous_outputs": self.task_outputs,
             "use_summarization": use_summarization,
-            "classification": self.classification,  # v2: pass classification
+            "classification": self.classification,
+            "retry_feedback": retry_feedback,  # v3: pass feedback for retries
         })
         
         if not exec_result.get("success"):
@@ -278,14 +281,14 @@ class CoordinatorAgent(BaseAgent):
             "output": exec_result.get("output", {}),
             "sources": exec_result.get("sources", []),
             "previous_outputs": self.task_outputs,
-            "classification": self.classification,  # v2: pass classification
+            "classification": self.classification,
         })
         
         exec_result["validation"] = val_result.get("validation", {})
         return exec_result
     
     async def _make_decision(self, task_id: str, result: Dict[str, Any]) -> CoordinatorDecision:
-        """Make a decision based on task result - biased toward proceeding."""
+        """Make decision based on task result (v3: with retry feedback)."""
         
         # Check for execution failure
         if not result.get("success"):
@@ -304,12 +307,14 @@ class CoordinatorAgent(BaseAgent):
                     reason=f"Max retries exceeded. Last error: {error}",
                 )
         
-        # Check validation result - BE LENIENT
+        # Check validation result
         validation = result.get("validation", {})
-        score = validation.get("score", 8)  # Default to good score
+        score = validation.get("score", 8)
         is_valid = validation.get("valid", True)
+        issues = validation.get("issues", [])
+        feedback = validation.get("feedback_for_retry", "")
         
-        # If output exists and has content, proceed on first try
+        # Check output quality
         output = result.get("output", {})
         has_content = output and (
             output.get("summary") or 
@@ -317,50 +322,70 @@ class CoordinatorAgent(BaseAgent):
             len(str(output)) > 100
         )
         
-        # First attempt with reasonable content -> proceed immediately
+        # Check for comparison/competitor content
+        has_competitors = bool(output.get("competitors_identified", []))
+        has_comparisons = bool(output.get("comparisons", []) or output.get("comparison_table"))
+        has_key_insight = bool(output.get("key_insight"))
+        
         retries = self.task_retries.get(task_id, 0)
-        if retries == 0 and has_content and score >= 6.9:
+        
+        # First attempt with investor-grade content -> proceed
+        if retries == 0 and has_content and has_key_insight and score >= 6.8:
             return CoordinatorDecision(
                 action=CoordinatorAction.PROCEED,
-                reason=f"First attempt with content (score: {score:.1f})",
+                reason=f"First attempt passed investor-grade (score: {score:.1f})",
             )
         
         # Standard validation check
         if is_valid and score >= self.min_validation_score:
             return CoordinatorDecision(
                 action=CoordinatorAction.PROCEED,
-                reason="Validation passed",
+                reason=f"Validation passed (score: {score:.1f})",
             )
         
-        # Only retry if score is below threshold
-        if retries < self.max_retries and score < 7:
-            issues = validation.get("issues", [])
+        # Retry if score below threshold and we have issues to address
+        if retries < self.max_retries and score < self.min_validation_score:
+            # Store feedback for retry
+            self._store_retry_feedback(task_id, feedback or f"Issues: {'; '.join(issues[:3])}")
+            
             return CoordinatorDecision(
                 action=CoordinatorAction.RETRY,
-                reason=f"Low validation score ({score:.1f})",
+                reason=f"Quality issues (score: {score:.1f})",
                 retry_count=retries + 1,
-                prompt_update=f"Improve: {'; '.join(issues[:2])}" if issues else None,
+                prompt_update=feedback[:300] if feedback else None,  # Allow longer feedback
             )
         
-        # Accept with any score if there's content
-        if has_content:
+        # Accept with content after multiple tries (but require key_insight)
+        if has_content and has_key_insight and retries >= 1:
             return CoordinatorDecision(
                 action=CoordinatorAction.PROCEED,
-                reason=f"Accepting content (score: {score:.1f})",
+                reason=f"Accepting after {retries} retries (score: {score:.1f})",
             )
         
-        # Retry if no content
+        # Final retry
         if retries < self.max_retries:
             return CoordinatorDecision(
                 action=CoordinatorAction.RETRY,
-                reason="No content generated",
+                reason="Insufficient content quality",
                 retry_count=retries + 1,
             )
         
         return CoordinatorDecision(
             action=CoordinatorAction.FAIL,
-            reason=f"Failed after {self.max_retries} retries",
+            reason=f"Failed after {self.max_retries} retries (score: {score:.1f})",
         )
+    
+    def _store_retry_feedback(self, task_id: str, feedback: str):
+        """Store retry feedback for a task."""
+        if not hasattr(self, '_retry_feedbacks'):
+            self._retry_feedbacks = {}
+        self._retry_feedbacks[task_id] = feedback
+    
+    def _get_retry_feedback(self, task_id: str) -> str:
+        """Get stored retry feedback for a task."""
+        if not hasattr(self, '_retry_feedbacks'):
+            return ""
+        return self._retry_feedbacks.get(task_id, "")
     
     def _get_next_task(self) -> Optional[Dict[str, Any]]:
         """Get the next task that can be executed."""
