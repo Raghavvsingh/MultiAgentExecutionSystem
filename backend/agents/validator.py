@@ -1,4 +1,4 @@
-"""Validator Agent - Multi-layer validation (v8 - Investor Decision Engine)."""
+"""Validator Agent - Multi-layer validation (v9 - Fast & Sharp)."""
 
 import json
 from typing import Dict, Any, Optional, List
@@ -11,123 +11,29 @@ from models.schemas import ValidationResult
 logger = logging.getLogger(__name__)
 
 
-# ============== V8 VALIDATOR SYSTEM PROMPT (INVESTOR DECISION ENGINE) ==============
-VALIDATOR_SYSTEM_PROMPT = """You are a VC partner reviewing analysis for investment decisions.
-Output quality determines capital allocation. Be ruthlessly critical.
+# ============== V9 VALIDATOR SYSTEM PROMPT (FAST) ==============
+VALIDATOR_SYSTEM_PROMPT = """Score this startup analysis 1-10 on these dimensions:
 
-# EVALUATION DIMENSIONS (score each 1-10):
+1. comparison_depth: Has comparison_table with real products?
+2. insight_quality: key_insight is non-obvious? strategic_implication is actionable?
+3. competitor_quality: Real products (Slack/Discord/LinkedIn), not NGOs?
+4. decision_strength: Clear verdict (YES/NO/CONDITIONAL)?
+5. risk_clarity: biggest_risk explicitly stated?
 
-## 1. POSITIONING CLARITY (v8 - critical)
-- Does output have overall_positioning with why_this_wins AND why_this_loses?
-- Are win/lose reasons specific (not generic)?
-- 9-10: Clear win vs lose with specific reasons
-- 6-8: Some positioning present
-- Below 6: Missing or vague positioning
+Auto-reject if: empty output, placeholder text, NGOs as competitors.
 
-## 2. MOAT ANALYSIS (v8 - critical)
-- Is moat_analysis present with defensibility rating?
-- Are reasons for moat strength explained?
-- 9-10: Clear defensibility assessment (HIGH/MEDIUM/LOW) with reasons
-- 6-8: Some moat discussion
-- Below 6: Missing moat analysis
-
-## 3. EXECUTION DIFFICULTY (v8)
-- Is execution_difficulty assessed (HIGH/MEDIUM/LOW)?
-- Are technical, market, user acquisition difficulties evaluated?
-- 9-10: Full difficulty assessment
-- 6-8: Partial assessment
-- Below 6: Missing
-
-## 4. SWITCHING BARRIER (v8 - critical)
-- Is switching_barrier_analysis present?
-- Current user behavior identified?
-- Barriers and triggers explained?
-- 9-10: Complete switching analysis
-- 6-8: Some barriers mentioned
-- Below 6: Missing switching analysis
-
-## 5. COMPARISON DEPTH
-- comparison_table with winner_by_feature?
-- 9-10: Full table with per-feature winners
-- 6-8: Table present
-- Below 6: Missing
-
-## 6. DATA INTERPRETATION
-- Does every data point have SO WHAT implication?
-- 9-10: All data interpreted
-- Below 6: Raw data dump
-
-## 7. COMPETITOR QUALITY
-- Dominant incumbent (Slack/LinkedIn/Discord) included?
-- All real products (not NGOs)?
-- 9-10: Market leader + real products
-- Below 6: Wrong entities
-
-## 8. INSIGHT QUALITY
-- key_insight NON-OBVIOUS?
-- strategic_implication ACTIONABLE?
-- 9-10: Sharp insight + clear action
-- Below 6: Generic or missing
-
-## 9. DECISION STRENGTH
-- verdict: YES/NO/CONDITIONAL?
-- conditions_for_success MEASURABLE?
-- 9-10: Decisive with measurable conditions
-- Below 6: Vague
-
-## 10. RISK CLARITY
-- biggest_risk explicitly stated?
-- Single critical failure point?
-- 9-10: Brutal, clear risk
-- Below 6: Missing or generic
-
-## 11. CONDITION SPECIFICITY (v8)
-- Are conditions_for_success TESTABLE/OBSERVABLE?
-- Include metrics or timeframes?
-- 9-10: "MUST: 1000 users in 6 months"
-- 6-8: "MUST: achieve strong adoption" (too vague)
-- Below 6: Missing conditions
-
-# AUTO-REJECT CONDITIONS (instant fail):
-- No overall_positioning (why wins/loses)
-- No moat_analysis
-- No switching_barrier_analysis
-- No comparison_table for competitor tasks
-- No biggest_risk
-- Conditions not measurable
-- Generic phrases: "market is growing", "shows promise"
-- NGOs/programs as competitors
-
-# OUTPUT FORMAT:
-{
-  "positioning_clarity": 8,
-  "moat_analysis": 7,
-  "execution_difficulty": 8,
-  "switching_barrier": 7,
-  "comparison_depth": 8,
-  "data_interpretation": 8,
-  "competitor_quality": 9,
-  "insight_quality": 8,
-  "decision_strength": 7,
-  "risk_clarity": 8,
-  "condition_specificity": 7,
-  "overall_score": 7.7,
-  "valid": true,
-  "strengths": ["what's good"],
-  "issues": ["specific issues"],
-  "feedback_for_retry": "what must be fixed"
-}"""
+Output JSON: {comparison_depth, insight_quality, competitor_quality, decision_strength, risk_clarity, overall_score, valid, issues}"""
 
 
 class ValidatorAgent(BaseAgent):
-    """Agent for investor decision engine validation (v8)."""
+    """Agent for fast validation (v9)."""
     
     def __init__(self, run_id: str):
         super().__init__(run_id, "validator")
-        self.min_valid_score = 6.5  # 65% threshold - balanced for v8 complexity
+        self.min_valid_score = 6.0  # 60% threshold - faster pass rate
     
     async def execute(self, context: Dict[str, Any]) -> Dict[str, Any]:
-        """Validate task output with investor-grade standards."""
+        """Validate task output with fast checks."""
         task_id = context.get("task_id", "unknown")
         task_description = context.get("task_description", "")
         output = context.get("output", {})
@@ -425,7 +331,7 @@ class ValidatorAgent(BaseAgent):
         return {
             "valid": base_score >= 5.5,
             "score": max(0, min(10, base_score)),
-            "issues": issues[:6],
+            "issues": issues[:4],
             "bonuses": bonuses,
             "layer": "rules",
         }
@@ -437,50 +343,36 @@ class ValidatorAgent(BaseAgent):
         output: Dict[str, Any],
         sources: List[str],
     ) -> Dict[str, Any]:
-        """Layer 3: LLM-based investor decision engine assessment (v8)."""
+        """Layer 3: Fast LLM validation (v9)."""
         
         is_competitor_task = any(kw in task_description.lower() 
-            for kw in ["competitor", "compare", "landscape", "player", "alternative"])
+            for kw in ["competitor", "compare", "landscape", "player"])
         is_final_task = any(kw in task_description.lower() 
             for kw in ["recommend", "verdict", "conclusion", "final"])
         
-        prompt = f"""Evaluate this startup analysis for INVESTOR DECISION ENGINE quality (v8).
+        # Shorter prompt for faster response
+        prompt = f"""Score this analysis (1-10):
 
-TASK: {task_description[:300]}
+TASK: {task_description[:200]}
 
-OUTPUT:
-{json.dumps(output, indent=2, default=str)[:2500]}
+OUTPUT (truncated):
+{json.dumps(output, indent=1, default=str)[:1500]}
 
-{"COMPETITOR TASK: comparison_table + dominant incumbent REQUIRED" if is_competitor_task else ""}
-{"FINAL TASK: verdict + measurable conditions + biggest_risk REQUIRED" if is_final_task else ""}
+Score 5 dimensions:
+1. comparison_depth: comparison_table present? (8 if yes, 6 if partial, 4 if none)
+2. insight_quality: key_insight non-obvious? (8 if sharp, 6 if okay, 4 if generic)
+3. competitor_quality: real products like Slack/Discord? (8 if yes, 4 if NGOs)
+4. decision_strength: {"verdict present?" if is_final_task else "clear conclusions?"}
+5. risk_clarity: biggest_risk stated?
 
-Score each dimension 1-10:
-1. positioning_clarity: Has overall_positioning with why_this_wins AND why_this_loses?
-2. moat_analysis: Has defensibility rating (HIGH/MEDIUM/LOW) with reasons?
-3. execution_difficulty: Has level assessment with technical/market/acquisition breakdown?
-4. switching_barrier: Has current_behavior, switching_difficulty, barriers, triggers?
-5. comparison_depth: comparison_table with winner_by_feature?
-6. data_interpretation: Every data point has SO WHAT implication?
-7. competitor_quality: Dominant incumbent included? Real products only?
-8. insight_quality: key_insight NON-OBVIOUS? strategic_implication ACTIONABLE?
-9. decision_strength: YES/NO/CONDITIONAL verdict with measurable conditions?
-10. risk_clarity: biggest_risk is specific critical failure point?
-11. condition_specificity: conditions_for_success have metrics/timeframes?
-
-INVESTOR DECISION STANDARDS:
-- 8.5+: Ready for investment committee
-- 7.5-8.5: Strong, actionable
-- 7.0-7.5: Acceptable
-- Below 7: Not acceptable
-
-Output JSON: positioning_clarity, moat_analysis, execution_difficulty, switching_barrier, comparison_depth, data_interpretation, competitor_quality, insight_quality, decision_strength, risk_clarity, condition_specificity, overall_score, valid, strengths, issues, feedback_for_retry"""
+Output JSON: {{comparison_depth, insight_quality, competitor_quality, decision_strength, risk_clarity, overall_score, valid, issues}}"""
 
         try:
             response = await self.llm_service.generate_json(
                 prompt=prompt,
                 system_prompt=VALIDATOR_SYSTEM_PROMPT,
-                temperature=0.12,  # Very low for consistent scoring
-                max_tokens=800,
+                temperature=0.1,
+                max_tokens=300,  # Reduced from 800
             )
             
             self.track_llm_usage(response, task_id)
@@ -488,19 +380,13 @@ Output JSON: positioning_clarity, moat_analysis, execution_difficulty, switching
             if response.get("parsed"):
                 parsed = response["parsed"]
                 
-                # Calculate overall from 11 dimensions (v8)
+                # Calculate overall from 5 dimensions (v9 fast)
                 dimensions = [
-                    parsed.get("positioning_clarity", 7),
-                    parsed.get("moat_analysis", 7),
-                    parsed.get("execution_difficulty", 7),
-                    parsed.get("switching_barrier", 7),
                     parsed.get("comparison_depth", 7),
-                    parsed.get("data_interpretation", 7),
-                    parsed.get("competitor_quality", 7.5),
                     parsed.get("insight_quality", 7),
+                    parsed.get("competitor_quality", 7),
                     parsed.get("decision_strength", 7),
                     parsed.get("risk_clarity", 7),
-                    parsed.get("condition_specificity", 7),
                 ]
                 avg_score = sum(dimensions) / len(dimensions)
                 
@@ -508,30 +394,22 @@ Output JSON: positioning_clarity, moat_analysis, execution_difficulty, switching
                     "valid": avg_score >= self.min_valid_score,
                     "score": avg_score,
                     "dimension_scores": {
-                        "positioning_clarity": parsed.get("positioning_clarity", 7),
-                        "moat_analysis": parsed.get("moat_analysis", 7),
-                        "execution_difficulty": parsed.get("execution_difficulty", 7),
-                        "switching_barrier": parsed.get("switching_barrier", 7),
                         "comparison_depth": parsed.get("comparison_depth", 7),
-                        "data_interpretation": parsed.get("data_interpretation", 7),
-                        "competitor_quality": parsed.get("competitor_quality", 7.5),
                         "insight_quality": parsed.get("insight_quality", 7),
+                        "competitor_quality": parsed.get("competitor_quality", 7),
                         "decision_strength": parsed.get("decision_strength", 7),
                         "risk_clarity": parsed.get("risk_clarity", 7),
-                        "condition_specificity": parsed.get("condition_specificity", 7),
                     },
-                    "strengths": parsed.get("strengths", []),
                     "issues": parsed.get("issues", []),
-                    "feedback_for_retry": parsed.get("feedback_for_retry", ""),
                     "layer": "llm",
                 }
         except Exception as e:
             self.log(f"LLM validation failed: {e}", level="warning", task_id=task_id)
         
-        # Default on LLM failure
+        # Default on LLM failure - pass it
         return {
             "valid": True,
-            "score": 7.5,
+            "score": 7.0,
             "issues": [],
             "layer": "llm_fallback",
         }

@@ -35,7 +35,7 @@ class CoordinatorAgent(BaseAgent):
         self.validator = ValidatorAgent(run_id)
         
         self.max_retries = settings.max_retries
-        self.min_validation_score = 6.5  # 65% - balanced for v8
+        self.min_validation_score = 6.0  # 60% - fast pass rate
         
         # Run state
         self.tasks: List[Dict[str, Any]] = []

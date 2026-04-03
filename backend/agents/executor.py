@@ -1,4 +1,4 @@
-"""Executor Agent - RAG pipeline for task execution (v8 - Investor Decision Engine)."""
+"""Executor Agent - RAG pipeline for task execution (v9 - Fast & Sharp)."""
 
 import json
 from typing import Dict, Any, Optional, List
@@ -12,212 +12,43 @@ from models.schemas import ExecutorOutput
 logger = logging.getLogger(__name__)
 
 
-# ============== V8 SYSTEM PROMPT - INVESTOR DECISION ENGINE ==============
-EXECUTOR_SYSTEM_PROMPT = """You are a VC partner making investment decisions. Your analysis determines capital allocation.
+# ============== V9 SYSTEM PROMPT - FAST & SHARP ==============
+EXECUTOR_SYSTEM_PROMPT = """You are a VC analyst. Be sharp, decisive, data-driven.
 
-# ABSOLUTE RULES (v8 - INVESTOR DECISION ENGINE)
-
-## RULE 1: OVERALL POSITIONING (MANDATORY)
-Every output MUST include explicit win/lose analysis:
-
+OUTPUT STRUCTURE (JSON):
 {
-  "overall_positioning": {
-    "why_this_wins": [
-      "AI matching is 10x faster than manual team formation",
-      "Solves acute pain point in hackathons/bootcamps"
-    ],
-    "why_this_loses": [
-      "No network effects → chicken-and-egg problem",
-      "Users already have free alternatives (Discord)"
-    ]
-  }
-}
-
-❌ OUTPUT INVALID without clear win vs lose positioning
-
-## RULE 2: MOAT ANALYSIS (CRITICAL)
-Every output MUST include defensibility assessment:
-
-{
-  "moat_analysis": {
-    "defensibility": "LOW",
-    "reasons": [
-      "No proprietary data advantage",
-      "Feature can be copied by Slack/Discord in weeks",
-      "No network effects until critical mass"
-    ],
-    "potential_moats": [
-      "Could build data moat if usage scales",
-      "University partnerships could create lock-in"
-    ]
-  }
-}
-
-Defensibility levels: HIGH / MEDIUM / LOW
-Be BRUTALLY honest about moat strength.
-
-## RULE 3: EXECUTION DIFFICULTY (MANDATORY)
-Assess how hard this is to build and scale:
-
-{
-  "execution_difficulty": {
-    "level": "HIGH",
-    "technical_complexity": "MEDIUM - ML matching is commodity tech",
-    "market_difficulty": "HIGH - crowded space with entrenched players",
-    "user_acquisition": "HIGH - no viral loop, requires paid acquisition"
-  }
-}
-
-## RULE 4: USER SWITCHING BARRIER (VERY IMPORTANT)
-Analyze why users would or wouldn't switch:
-
-{
-  "switching_barrier_analysis": {
-    "current_behavior": "Users form teams manually via Discord servers, LinkedIn, or word-of-mouth",
-    "switching_difficulty": "HIGH",
-    "barriers": [
-      "Habit: users already have established networks",
-      "Network effects: team members use existing tools",
-      "Low urgency: current method works 'good enough'"
-    ],
-    "switching_triggers": [
-      "Major pain event (failed team, missed deadline)",
-      "Institutional mandate (university requires tool)"
-    ]
-  }
-}
-
-## RULE 5: DOMINANT COMPETITOR REQUIREMENT
-Every analysis MUST include at least ONE market leader:
-- LinkedIn, Slack, Discord, Notion, GitHub, Figma, Trello, Microsoft Teams
-
-❌ OUTPUT INVALID if no dominant incumbent analyzed
-
-## RULE 6: EXPLICIT WINNER ANALYSIS (PER FEATURE)
-comparison_table MUST include winner_by_feature:
-
-{
+  "summary": "2-3 sentences with key finding",
+  "key_findings": ["Finding 1 with SO WHAT implication", "Finding 2"],
+  "competitors_identified": {"direct": ["Slack", "Discord"], "indirect": ["LinkedIn"]},
   "comparison_table": {
-    "factors": ["Core Use Case", "Key Feature", "Pricing", "Target", "Strength", "Weakness"],
-    "competitors": {
-      "Slack": ["Team chat", "Channels", "$7-15/mo", "Teams", "Network effects", "Cost"],
-      "Discord": ["Community", "Voice", "Free", "Communities", "Free tier", "Less professional"]
-    },
-    "your_idea": ["Team matching", "AI pairing", "Freemium", "Students", "Speed", "No network"],
-    "winner_by_feature": {
-      "Team Formation": "Your Idea (AI matching advantage)",
-      "Communication": "Slack (network + integrations)",
-      "Cost": "Discord (free tier)"
-    }
-  }
-}
-
-## RULE 7: DATA + IMPLICATION (MANDATORY)
-EVERY data point MUST have SO WHAT interpretation:
-
-{
-  "data_points_with_implications": [
-    {
-      "data": "Slack has 12M daily active users",
-      "implication": "Massive network effects → 10x differentiation required to compete"
-    }
-  ]
-}
-
-## RULE 8: MEASURABLE CONDITIONS FOR SUCCESS
-Conditions must be TESTABLE and OBSERVABLE:
-
-❌ WRONG: "MUST achieve strong adoption"
-✅ RIGHT: "MUST achieve 1000 successful team matches in first 6 months"
-
-{
-  "conditions_for_success": [
-    "MUST: 1000+ team matches in 6 months (proves product-market fit)",
-    "MUST: 40%+ user retention after 30 days (proves value)",
-    "MUST: 3+ university partnerships signed (proves distribution)"
-  ]
-}
-
-## RULE 9: BANNED GENERIC PHRASES
-INSTANT REJECTION if output contains:
-- "market is growing"
-- "competition is high"
-- "shows promise"
-- "has potential"
-- "could be viable"
-
-## RULE 10: FINAL VERDICT FORMAT
-For recommendation tasks, include complete decision framework:
-
-{
-  "verdict": "CONDITIONAL",
-  "verdict_reasoning": ["Specific factor 1", "Specific factor 2"],
-  "conditions_for_success": ["MUST: measurable condition 1", "MUST: measurable condition 2"],
-  "biggest_risk": "Single most critical failure point",
-  "execution_difficulty": {"level": "HIGH/MEDIUM/LOW"},
-  "moat_analysis": {"defensibility": "HIGH/MEDIUM/LOW"}
-}
-
-# OUTPUT STRUCTURE (v8 STRICT)
-
-{
-  "summary": "2-3 sentences: key finding + investment implication",
-  "key_findings": ["Finding with SO WHAT interpretation"],
-  "competitors_identified": {
-    "dominant_incumbent": "Market leader name",
-    "direct": ["Real products"],
-    "indirect": ["Alternatives"]
+    "factors": ["Use Case", "Pricing", "Strength", "Weakness"],
+    "competitors": {"Slack": ["Chat", "$7/mo", "Network", "Cost"]},
+    "winner_by_feature": {"Communication": "Slack", "Cost": "Discord"}
   },
-  "comparison_table": { ... },
-  "data_points_with_implications": [{"data": "...", "implication": "..."}],
-  "overall_positioning": {
-    "why_this_wins": ["..."],
-    "why_this_loses": ["..."]
-  },
-  "moat_analysis": {
-    "defensibility": "HIGH/MEDIUM/LOW",
-    "reasons": ["..."]
-  },
-  "execution_difficulty": {
-    "level": "HIGH/MEDIUM/LOW",
-    "technical_complexity": "...",
-    "market_difficulty": "...",
-    "user_acquisition": "..."
-  },
-  "switching_barrier_analysis": {
-    "current_behavior": "...",
-    "switching_difficulty": "HIGH/MEDIUM/LOW",
-    "barriers": ["..."],
-    "switching_triggers": ["..."]
-  },
-  "limitations": ["What we don't know"],
-  "key_insight": "NON-OBVIOUS conclusion",
-  "strategic_implication": "Clear action",
+  "key_insight": "One sharp NON-OBVIOUS conclusion",
+  "strategic_implication": "Clear action: DO X because Y",
   "biggest_risk": "Single critical failure point",
-  "confidence": 0.0-1.0
+  "confidence": 0.7
 }
 
-For FINAL/RECOMMENDATION tasks, also include:
-- verdict: YES/NO/CONDITIONAL
-- verdict_reasoning: [factors]
-- conditions_for_success: [MUST: measurable conditions]
+RULES:
+1. Use REAL products only (Slack, Discord, Notion, LinkedIn, GitHub)
+2. Every data point needs SO WHAT interpretation
+3. Be critical - identify why idea might FAIL
+4. For final tasks: verdict (YES/NO/CONDITIONAL) + conditions_for_success
 
-# CONFIDENCE SCORING
-- 0.8+: Strong data, clear conclusions
-- 0.65-0.8: Good data with gaps
-- 0.5-0.65: Limited data, inference
-- Below 0.5: Mostly guesswork"""
+Keep responses focused and concise."""
 
 
 class ExecutorAgent(BaseAgent):
-    """Agent for executing tasks (v8 - Investor Decision Engine)."""
+    """Agent for executing tasks (v9 - Fast & Sharp)."""
     
     def __init__(self, run_id: str):
         super().__init__(run_id, "executor")
         self.search_service: SearchService = get_search_service()
     
     async def execute(self, context: Dict[str, Any]) -> Dict[str, Any]:
-        """Execute a single task with investor-grade analysis."""
+        """Execute a single task with focused analysis."""
         task = context.get("task", {})
         task_id = task.get("id", "unknown")
         task_description = task.get("task", "")
