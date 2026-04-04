@@ -628,7 +628,12 @@ CURRENT TASK:
             
             # V6 DEBUGGING: Log structure after normalization
             ct = parsed_output.get("comparison_table", {})
+            # V22 FIX: Ensure ct is a dict before calling .get()
+            if not isinstance(ct, dict):
+                ct = {"rows": ct if isinstance(ct, list) else []}
             fv = parsed_output.get("final_verdict", {})
+            if not isinstance(fv, dict):
+                fv = {}
             self.log(
                 f"V6 STRUCTURE CHECK: comparison_rows={len(ct.get('rows', []))}, "
                 f"verdict={fv.get('verdict', 'MISSING')}, "
@@ -1027,7 +1032,11 @@ CURRENT TASK:
         # V6: Ensure comparison_table has proper structure
         ct = output.get("comparison_table", {})
         if not isinstance(ct, dict):
-            output["comparison_table"] = {"rows": []}
+            # V22 FIX: If it's a list, wrap it properly
+            if isinstance(ct, list):
+                output["comparison_table"] = {"rows": ct}
+            else:
+                output["comparison_table"] = {"rows": []}
         elif "rows" not in ct:
             output["comparison_table"]["rows"] = []
         
@@ -1061,7 +1070,12 @@ CURRENT TASK:
         
         # V6: Build confidence_breakdown from comparison_table
         ct = output.get("comparison_table") or {}
-        rows = ct.get("rows", []) if isinstance(ct, dict) else []
+        # V22 FIX: Ensure ct is dict before calling .get()
+        if not isinstance(ct, dict):
+            ct = {"rows": ct if isinstance(ct, list) else []}
+        rows = ct.get("rows", [])
+        if not isinstance(rows, list):
+            rows = []
         output["confidence_breakdown"]["comparison_present"] = len(rows) >= 1
         output["confidence_breakdown"]["winners_present"] = any(
             isinstance(r, dict) and r.get("winner") for r in rows

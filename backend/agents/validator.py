@@ -269,11 +269,19 @@ class ValidatorAgent(BaseAgent):
             # CHECK 4: comparison_table MANDATORY for final task
             comparison = output.get("comparison_table") or output.get("comparison")
             if not comparison or not isinstance(comparison, dict):
-                missing.append("comparison_table")
-                score -= 2.0
-            else:
+                # V22 FIX: Try to extract rows if it's a list
+                if isinstance(comparison, list):
+                    comparison = {"rows": comparison}
+                else:
+                    missing.append("comparison_table")
+                    score -= 2.0
+                    comparison = {"rows": []}  # Set to empty dict for further checks
+            
+            if isinstance(comparison, dict):
                 rows = comparison.get("rows", [])
-                if not isinstance(rows, list) or len(rows) < 3:
+                if not isinstance(rows, list):
+                    rows = []
+                if len(rows) < 3:
                     missing.append("comparison_table_3_rows")
                     score -= 1.5
                 else:
@@ -286,7 +294,10 @@ class ValidatorAgent(BaseAgent):
             
             # CHECK 5: final_verdict MANDATORY for final task
             final_verdict = output.get("final_verdict", {})
-            if not isinstance(final_verdict, dict) or not final_verdict.get("verdict"):
+            # V22 FIX: Ensure final_verdict is a dict
+            if not isinstance(final_verdict, dict):
+                final_verdict = {}
+            if not final_verdict.get("verdict"):
                 missing.append("final_verdict")
                 score -= 2.0
             else:
