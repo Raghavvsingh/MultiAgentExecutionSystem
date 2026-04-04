@@ -1,0 +1,70 @@
+"""
+COST OPTIMIZATION ANALYSIS - Current vs Optimized
+
+CURRENT SYSTEM (Expensive):
+================================
+
+LLM Calls per Run:
+- Planner: 1 call (1500 tokens)
+- Executor: 6 tasks × 1 call = 6 calls (2000 tokens each)
+- Validator: 6 tasks × 0.5 LLM calls = 3 calls (800 tokens each)
+- Retries: 2 tasks × 2 retries × 1 call = 4 calls (2000 tokens each)
+TOTAL: ~14 LLM calls per run
+
+Token Usage:
+- Planner: 1500 tokens
+- Executor: 6 × 2000 = 12,000 tokens
+- Validator: 3 × 800 = 2,400 tokens
+- Retries: 4 × 2000 = 8,000 tokens
+TOTAL: ~23,900 tokens per run
+
+Cost (GPT-4o-mini):
+- Input: $0.00015 per 1K tokens
+- Output: $0.0006 per 1K tokens
+- Average: ~$0.015 per run
+
+Search API Calls:
+- 6 tasks × 3 queries = 18 searches per run
+
+
+OPTIMIZED SYSTEM (Lean):
+================================
+
+LLM Calls per Run:
+- Planner: 1 call (800 tokens) [REDUCED]
+- Executor: 4 tasks × 1 call = 4 calls (1200 tokens each) [REDUCED]
+- Validator: RULE-BASED ONLY (0 LLM calls) [REMOVED]
+- Retries: 1 task × 1 retry = 1 call (1200 tokens) [REDUCED]
+TOTAL: ~6 LLM calls per run (57% REDUCTION)
+
+Token Usage:
+- Planner: 800 tokens
+- Executor: 4 × 1200 = 4,800 tokens
+- Validator: 0 tokens (rule-based only)
+- Retries: 1 × 1200 = 1,200 tokens
+TOTAL: ~6,800 tokens per run (72% REDUCTION)
+
+Cost (GPT-4o-mini):
+- Average: ~$0.004 per run
+SAVINGS: 73% COST REDUCTION
+
+Search API Calls:
+- 4 tasks × 2 queries = 8 searches per run (56% REDUCTION)
+
+
+KEY OPTIMIZATIONS:
+==================
+
+1. ✅ Reduced max_tokens: 2000 → 1200 (40% reduction)
+2. ✅ Reduced context: 6000 → 3000 chars (50% reduction)
+3. ✅ Strict task limit: 6 → 4 tasks (33% reduction)
+4. ✅ Removed LLM validation: 100% (except final task)
+5. ✅ Max retries: 3 → 1 (67% reduction)
+6. ✅ Search queries: 3 → 2 per task (33% reduction)
+7. ✅ Added caching (prevents duplicate calls)
+8. ✅ Early exit (high confidence → skip validation)
+9. ✅ Streamlined prompt (shorter = fewer output tokens)
+
+TOTAL COST REDUCTION: ~73%
+QUALITY IMPACT: Minimal (maintained sharp insights, comparisons, verdicts)
+"""

@@ -16,6 +16,7 @@ from tenacity import (
 )
 
 from config import get_settings
+from services.llm_cache import get_llm_cache  # COST OPTIMIZATION: Add caching
 
 logger = logging.getLogger(__name__)
 settings = get_settings()
@@ -43,6 +44,11 @@ class LLMService:
         self.total_prompt_tokens = 0
         self.total_completion_tokens = 0
         self.total_cost = 0.0
+        
+        # Cache initialization
+        self.cache = get_llm_cache()
+        self.cache_hits = 0
+        self.cache_misses = 0
     
     def _calculate_cost(self, prompt_tokens: int, completion_tokens: int) -> float:
         """Calculate cost based on token usage."""
@@ -65,7 +71,7 @@ class LLMService:
         max_tokens: int = 1500,  # Reduced from 2000 for faster responses
         json_mode: bool = False,
     ) -> Dict[str, Any]:
-        """Generate a response from the LLM."""
+        """Generate a response from the LLM with caching (COST OPTIMIZATION)."""
         start_time = time.time()
         
         messages = []
@@ -77,6 +83,15 @@ class LLMService:
         # Truncate user prompt if too long
         prompt = prompt[:12000]
         messages.append({"role": "user", "content": prompt})
+        
+        # COST OPTIMIZATION: Check cache first
+        cached_response = self.cache.get(prompt, system_prompt or "", self.model)
+        if cached_response:
+            self.cache_hits += 1
+            logger.info(f"💰 CACHE HIT! Saved LLM call (total hits: {self.cache_hits})")
+            return cached_response
+        
+        self.cache_misses += 1
         
         kwargs = {
             "model": self.model,
@@ -107,7 +122,7 @@ class LLMService:
             
             logger.info(f"LLM response: tokens={prompt_tokens+completion_tokens}, cost=${cost:.4f}, latency={latency}ms")
             
-            return {
+            result = {
                 "content": content,
                 "prompt_tokens": prompt_tokens,
                 "completion_tokens": completion_tokens,
@@ -115,6 +130,11 @@ class LLMService:
                 "cost": cost,
                 "latency_ms": latency,
             }
+            
+            # COST OPTIMIZATION: Cache the response
+            self.cache.set(prompt, system_prompt or "", self.model, result)
+            
+            return result
             
         except APITimeoutError as e:
             logger.error(f"LLM API timeout after {time.time() - start_time:.1f}s")

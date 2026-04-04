@@ -86,7 +86,7 @@ class GoalClassification(BaseModel):
 
 class TaskPlan(BaseModel):
     """Complete task plan from planner agent."""
-    tasks: List[PlannedTask] = Field(..., min_length=5, max_length=12)
+    tasks: List[PlannedTask] = Field(..., min_length=4, max_length=5)
     goal_type: GoalType
     classification: Optional[GoalClassification] = None
     
@@ -140,8 +140,173 @@ class SearchResult(BaseModel):
     score: float = 0.0
 
 
+class AnalysisCaseType(str, Enum):
+    """Type of analysis being performed (from MASTER GREYBOX PROMPT)."""
+    STARTUP_IDEA = "startup_idea"
+    SINGLE_COMPANY = "single_company"
+    COMPETITOR_COMPARISON = "competitor_comparison"
+
+
+class VerdictType(str, Enum):
+    """Final verdict options (MASTER GREYBOX PROMPT requirement)."""
+    YES = "YES"
+    NO = "NO"
+    CONDITIONAL = "CONDITIONAL"
+
+
+class ComparisonRow(BaseModel):
+    """Single row in comparison table (MASTER GREYBOX structured output)."""
+    attribute: str
+    entity_a: str
+    entity_b: Optional[str] = None
+    winner: Optional[str] = Field(default=None, description="Explicit winner for this attribute")
+    explanation: Optional[str] = Field(default=None, description="Why this winner")
+
+
+class ComparisonTable(BaseModel):
+    """Structured comparison table (MANDATORY per MASTER GREYBOX PROMPT)."""
+    rows: List[ComparisonRow] = Field(..., min_length=3, description="At least 3 comparison dimensions")
+    case_type: AnalysisCaseType
+    
+    @validator('rows')
+    def validate_comparisons(cls, v, values):
+        """Ensure comparisons are meaningful."""
+        if not v:
+            raise ValueError("Comparison table cannot be empty - MANDATORY per MASTER GREYBOX")
+        # Check no generic attributes
+        generic_attrs = ["general", "overall", "other"]
+        for row in v:
+            if row.attribute.lower() in generic_attrs:
+                raise ValueError(f"Generic attribute '{row.attribute}' not allowed - be specific")
+        return v
+
+
+class FinalVerdict(BaseModel):
+    """Final decision (MANDATORY per MASTER GREYBOX PROMPT)."""
+    verdict: VerdictType
+    strong_arguments: List[str] = Field(..., min_length=2, max_length=3, 
+                                        description="2-3 strong supporting arguments")
+    major_risk: str = Field(..., min_length=10, description="Single critical failure point")
+    conditions_for_success: Optional[List[str]] = Field(default=None,
+                                                         description="Required if verdict is CONDITIONAL")
+    
+    @validator('conditions_for_success')
+    def conditional_requires_conditions(cls, v, values):
+        """If verdict is CONDITIONAL, must have conditions."""
+        if values.get('verdict') == VerdictType.CONDITIONAL and not v:
+            raise ValueError("CONDITIONAL verdict MUST include conditions_for_success")
+        return v
+
+
+class GreyboxTaskOutput(BaseModel):
+    """
+    McKinsey-grade task output following MASTER GREYBOX PROMPT structure.
+    EVERY task must follow this exact structure.
+    """
+    # Required sections (per MASTER GREYBOX PROMPT)
+    summary: str = Field(..., min_length=50, max_length=300, 
+                        description="2-3 crisp sentences maximum")
+    
+    key_findings: List[str] = Field(..., min_length=3, 
+                                   description="Specific bullets, NOT generic")
+    
+    comparison: ComparisonTable = Field(..., 
+                                       description="MANDATORY comparison - even for single entity")
+    
+    data_points: List[str] = Field(default_factory=list,
+                                  description="Real data OR 'No reliable data available'")
+    
+    limitations: List[str] = Field(..., min_length=1,
+                                  description="What data is missing, assumptions made")
+    
+    key_insight: str = Field(..., min_length=20,
+                            description="ONE sharp, NON-OBVIOUS insight (NOT generic)")
+    
+    strategic_implication: str = Field(..., min_length=20,
+                                      description="Clear action: DO X because Y")
+    
+    # Additional required fields
+    biggest_risk: str = Field(..., min_length=15,
+                            description="Single critical failure point")
+    
+    competitors_identified: Dict[str, List[str]] = Field(
+        default_factory=lambda: {"direct": [], "indirect": []},
+        description="Real company names only - NO placeholders"
+    )
+    
+    sources: List[str] = Field(default_factory=list,
+                              description="URLs from search results")
+    
+    # Confidence (dynamically calculated - NOT hardcoded)
+    confidence: float = Field(ge=0.0, le=1.0,
+                            description="0.0-1.0 based on data quality, NOT hardcoded")
+    
+    confidence_factors: Optional[Dict[str, float]] = Field(
+        default=None,
+        description="Breakdown: search_quality, data_availability, source_credibility, comparison_depth"
+    )
+    
+    # Optional for final task only
+    final_verdict: Optional[FinalVerdict] = Field(default=None,
+                                                 description="Required for final task only")
+    
+    @validator('key_insight')
+    def insight_not_generic(cls, v):
+        """Enforce anti-generic rule from MASTER GREYBOX PROMPT."""
+        generic_phrases = [
+            "market is growing",
+            "competition is high",
+            "huge opportunity",
+            "shows promise",
+            "has potential",
+            "could work",
+            "industry is expanding",
+            "competitive landscape",
+            "significant growth"
+        ]
+        v_lower = v.lower()
+        for phrase in generic_phrases:
+            if phrase in v_lower:
+                raise ValueError(
+                    f"Generic phrase '{phrase}' detected in key_insight. "
+                    f"MASTER GREYBOX PROMPT requires sharp, non-obvious insights."
+                )
+        # Must have "SO WHAT" character - check for action words
+        action_words = ["must", "should", "indicates", "suggests", "reveals", "means", "requires"]
+        if not any(word in v_lower for word in action_words):
+            raise ValueError("key_insight must include SO WHAT implication (action/conclusion)")
+        return v
+    
+    @validator('strategic_implication')
+    def implication_actionable(cls, v):
+        """Ensure strategic implication is actionable."""
+        if len(v.split()) < 5:
+            raise ValueError("strategic_implication too vague - needs clear action")
+        # Should contain action verbs
+        action_verbs = ["focus", "avoid", "prioritize", "build", "target", "invest", "delay", "pivot"]
+        if not any(verb in v.lower() for verb in action_verbs):
+            raise ValueError("strategic_implication must contain clear action verb")
+        return v
+    
+    @validator('competitors_identified')
+    def competitors_real(cls, v):
+        """Ensure competitors are real companies, not placeholders."""
+        blocked_terms = ["platform a", "platform b", "company x", "company y", 
+                        "competitor 1", "competitor 2", "solution a", "solution b",
+                        "ngo", "non-profit", "organization"]
+        all_competitors = v.get("direct", []) + v.get("indirect", [])
+        for comp in all_competitors:
+            comp_lower = comp.lower()
+            if any(blocked in comp_lower for blocked in blocked_terms):
+                raise ValueError(
+                    f"Placeholder/generic competitor '{comp}' detected. "
+                    f"MASTER GREYBOX PROMPT requires real company names only."
+                )
+        return v
+
+
 class ExecutorOutput(BaseModel):
-    """Output from executor agent - consultancy grade."""
+    """Legacy executor output - will be deprecated in favor of GreyboxTaskOutput."""
     task_id: str
     summary: str = Field(..., description="2-3 sentence executive summary")
     key_findings: List[str] = Field(default_factory=list, description="Key findings with data")

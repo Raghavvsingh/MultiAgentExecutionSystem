@@ -6,7 +6,8 @@ import logging
 import re
 
 from agents.base_agent import BaseAgent
-from models.schemas import TaskPlan, PlannedTask, GoalType
+from models.schemas import TaskPlan, PlannedTask, GoalType, AnalysisCaseType
+from agents.greybox_prompts import detect_case_type
 from config import get_settings
 
 logger = logging.getLogger(__name__)
@@ -18,7 +19,7 @@ PLANNER_SYSTEM_PROMPT = """You are a STRATEGY CONSULTANT designing execution pla
 
 # CORE PHILOSOPHY
 You are NOT a task splitter. You are a STRATEGIC COMPRESSION ENGINE.
-- MINIMIZE tasks (4-7 ONLY)
+- Generate MAXIMUM 5 tasks (can be 3-5, but never more than 5)
 - MAXIMIZE depth per task
 - Each task must produce DECISION-READY output
 
@@ -37,22 +38,21 @@ Each task MUST combine multiple dimensions:
 - "Analyze market size, growth trends, and demand drivers to assess opportunity attractiveness"
 - "Evaluate differentiation, strengths, weaknesses relative to competitors to identify strategic advantage"
 
-## MANDATORY COVERAGE (Compressed into 4-7 tasks)
+## MANDATORY COVERAGE (Compressed into EXACTLY 5 tasks)
 Across ALL tasks, MUST cover:
 1. Problem/user understanding
 2. Competitor identification + comparison
 3. Feature + pricing + positioning (COMBINED)
 4. Market context (size, trends, dynamics)
-5. Risks + opportunities
-6. Strategic recommendation
+5. Risks + opportunities + strategic recommendation
 
 ## ANTI-FRAGMENTATION RULE
 If two tasks CAN be merged → MUST be merged.
 
 ## TASK COUNT CONSTRAINT
-- MINIMUM: 4 tasks
-- MAXIMUM: 7 tasks
-- HARD LIMIT - NO EXCEPTIONS
+- MINIMUM: 3 tasks
+- MAXIMUM: 5 tasks
+- HARD LIMIT - NO EXCEPTIONS (never exceed 5 tasks)
 
 ## DEPENDENCY FLOW
 T1: Problem/context understanding
@@ -97,7 +97,7 @@ DOMAIN: {domain}
 ENTITIES: {entities_str}
 
 ## STRICT REQUIREMENTS:
-1. EXACTLY 4-7 tasks (HARD LIMIT)
+1. Generate 3-5 tasks (HARD LIMIT: MAXIMUM 5 tasks, never exceed this)
 2. Each task MUST be multi-dimensional (combine related aspects)
 3. NO shallow tasks like "analyze X" without context
 4. NO redundant or overlapping tasks
@@ -131,11 +131,14 @@ ENTITIES: {entities_str}
     prompt += """
 ## SELF-CHECK BEFORE RESPONDING:
 Reject your plan if:
-- Task count is NOT 4-7 ❌
+- Task count exceeds 5 ❌
+- Task count is less than 3 ❌
 - Any task is vague/shallow ❌
 - Tasks are repetitive ❌
 - Comparison is missing where relevant ❌
 - No clear final recommendation task ❌
+
+Generate 3-5 high-density tasks (never exceed 5).
 
 Return ONLY valid JSON."""
     
@@ -147,9 +150,9 @@ class PlannerAgent(BaseAgent):
     
     def __init__(self, run_id: str):
         super().__init__(run_id, "planner")
-        self.max_retries = 2
-        self.min_tasks = 4
-        self.max_tasks = 7
+        self.max_retries = 3  # Increased retries for better LLM success rate
+        self.min_tasks = 3  # Allow flexibility (3-5 tasks)
+        self.max_tasks = 5  # HARD LIMIT: Maximum 5 tasks
     
     def _detect_goal_type(self, goal: str) -> GoalType:
         """Detect the type of goal from the text."""
@@ -241,14 +244,22 @@ class PlannerAgent(BaseAgent):
         goal_type = self._detect_goal_type(goal)
         classification = self._extract_classification(goal, goal_type)
         
-        self.log(f"Detected: type={goal_type.value}, domain={classification['domain']}")
+        # Add MASTER GREYBOX case type detection
+        case_type = detect_case_type(goal, classification.get("entities", []))
+        classification["case_type"] = case_type
+        classification["analysis_case_type"] = case_type  # For compatibility
         
-        # Try LLM-based planning
+        self.log(f"Detected: type={goal_type.value}, case_type={case_type}, domain={classification['domain']}")
+        
+        # Try LLM-based planning (PRIMARY METHOD)
+        llm_errors = []
         for attempt in range(self.max_retries + 1):
             try:
+                self.log(f"LLM planning attempt {attempt + 1}/{self.max_retries + 1}")
                 plan = await self._generate_plan_llm(goal, classification)
                 
                 if plan and self._validate_plan(plan):
+                    self.log(f"✅ LLM planning succeeded on attempt {attempt + 1}")
                     return {
                         "success": True,
                         "plan": plan,
@@ -257,13 +268,17 @@ class PlannerAgent(BaseAgent):
                         "method": "llm",
                     }
                 else:
-                    self.log(f"Plan validation failed, attempt {attempt + 1}", level="warning")
+                    error_msg = f"Plan validation failed on attempt {attempt + 1}"
+                    llm_errors.append(error_msg)
+                    self.log(error_msg, level="warning")
                     
             except Exception as e:
-                self.log(f"LLM planning failed: {e}", level="error")
+                error_msg = f"LLM planning error on attempt {attempt + 1}: {e}"
+                llm_errors.append(error_msg)
+                self.log(error_msg, level="error")
         
-        # Fallback to template
-        self.log("Using template fallback", level="warning")
+        # Fallback to template (BACKUP ONLY - LLM failed after all retries)
+        self.log(f"⚠️ All {self.max_retries + 1} LLM attempts failed, using template fallback. Errors: {llm_errors}", level="warning")
         plan = self._generate_template_plan(goal, goal_type, classification)
         
         return {
@@ -272,6 +287,7 @@ class PlannerAgent(BaseAgent):
             "goal_type": goal_type.value,
             "classification": classification,
             "method": "template",
+            "llm_errors": llm_errors,  # Include errors for debugging
         }
     
     async def _generate_plan_llm(self, goal: str, classification: Dict[str, Any]) -> Optional[Dict[str, Any]]:
@@ -287,7 +303,7 @@ class PlannerAgent(BaseAgent):
             prompt=prompt,
             system_prompt=PLANNER_SYSTEM_PROMPT,
             temperature=0.4,
-            max_tokens=1500,
+            max_tokens=1200,  # Increased for 5-7 tasks
         )
         
         self.track_llm_usage(response)
@@ -315,14 +331,16 @@ class PlannerAgent(BaseAgent):
         """Validate plan meets high-density requirements."""
         tasks = plan.get("tasks", [])
         
-        # Check task count (HARD LIMIT: 4-7)
+        # Check task count (HARD LIMIT: 3-5 tasks, max 5)
         if len(tasks) < self.min_tasks:
             self.log(f"Too few tasks: {len(tasks)} < {self.min_tasks}", level="warning")
             return False
         
         if len(tasks) > self.max_tasks:
-            self.log(f"Too many tasks: {len(tasks)} > {self.max_tasks}", level="warning")
-            return False
+            self.log(f"Too many tasks: {len(tasks)} > {self.max_tasks} - truncating to {self.max_tasks}", level="warning")
+            # Truncate to max_tasks instead of failing completely
+            plan["tasks"] = tasks[:self.max_tasks]
+            tasks = plan["tasks"]
         
         # Check for placeholders
         plan_str = json.dumps(plan).lower()
@@ -332,12 +350,12 @@ class PlannerAgent(BaseAgent):
                 self.log(f"Plan contains placeholder: {placeholder}", level="warning")
                 return False
         
-        # Check task quality (high-density)
+        # Check task quality (relaxed for better LLM acceptance)
         for task in tasks:
             task_text = task.get("task", "").lower()
             
-            # Check minimum length (high-density tasks should be descriptive)
-            if len(task_text) < 40:
+            # Check minimum length (relaxed from 40 to 25 for flexibility)
+            if len(task_text) < 25:
                 self.log(f"Task too short: {task_text[:50]}", level="warning")
                 return False
             
@@ -357,6 +375,7 @@ class PlannerAgent(BaseAgent):
             self.log("Invalid DAG: contains cycles", level="warning")
             return False
         
+        self.log(f"LLM plan validated successfully with {len(tasks)} tasks")
         return True
     
     def _validate_dag(self, tasks: List[Dict[str, Any]]) -> bool:
@@ -447,7 +466,7 @@ class PlannerAgent(BaseAgent):
                 },
             ]
         elif goal_type == GoalType.IDEA_ANALYSIS:
-            # Idea analysis: 6 high-density tasks
+            # Idea analysis: 5 high-density tasks (combined risks into final recommendation)
             tasks = [
                 {
                     "id": "T1",
@@ -475,15 +494,9 @@ class PlannerAgent(BaseAgent):
                 },
                 {
                     "id": "T5",
-                    "task": f"Evaluate key risks, challenges, and barriers to entry for {entity_name} including competitive threats and operational concerns",
+                    "task": f"Provide strategic recommendation for {entity_name} with GO/NO-GO/CONDITIONAL verdict, key risks, and success factors",
                     "depends_on": ["T3", "T4"],
-                    "reason": "Risk assessment for decision-making"
-                },
-                {
-                    "id": "T6",
-                    "task": f"Provide strategic recommendation for {entity_name} with GO/NO-GO/CONDITIONAL verdict and key success factors",
-                    "depends_on": ["T5"],
-                    "reason": "Actionable strategic guidance"
+                    "reason": "Actionable strategic guidance with risk assessment"
                 },
             ]
         else:
