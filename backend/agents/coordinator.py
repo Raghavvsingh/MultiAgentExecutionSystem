@@ -7,11 +7,12 @@ from datetime import datetime
 import logging
 import asyncio
 
-from agents.base_agent import BaseAgent
-from agents.planner import PlannerAgent
-from agents.executor import ExecutorAgent
-from agents.validator import ValidatorAgent
-from models.schemas import (
+from backend.agents.base_agent import BaseAgent
+from backend.agents.planner import PlannerAgent
+from backend.agents.executor import ExecutorAgent
+from backend.agents.validator import ValidatorAgent
+
+from backend.models.schemas import (
     CoordinatorAction,
     CoordinatorDecision,
     RunStatusEnum,
@@ -19,7 +20,8 @@ from models.schemas import (
     GoalType,
     AnalysisCaseType,
 )
-from services.cost_tracker import get_cost_tracker
+
+from backend.services.cost_tracker import get_cost_tracker
 from backend.config import get_settings
 
 logger = logging.getLogger(__name__)
