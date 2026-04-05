@@ -5,9 +5,11 @@ from typing import Dict, Any, Optional, List
 import logging
 import re
 
-from agents.base_agent import BaseAgent
-from models.schemas import ValidationResult
-from agents.greybox_prompts import (
+from backend.agents.base_agent import BaseAgent
+
+from backend.models.schemas import ValidationResult
+
+from backend.agents.greybox_prompts import (
     validate_insight_quality,
     validate_insight_depth,
     validate_per_task_comparison,
