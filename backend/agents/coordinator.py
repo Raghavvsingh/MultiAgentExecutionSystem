@@ -325,7 +325,7 @@ class CoordinatorAgent(BaseAgent):
             return  # Already locked
         
         # Detect category from goal
-        from agents.executor import detect_category, get_comparison_entities
+        from backend.agents.executor import detect_category, get_comparison_entities
         category = detect_category(self.goal)
         self.global_context["category"] = category
         
@@ -665,8 +665,8 @@ class CoordinatorAgent(BaseAgent):
         if not self.tasks:
             return
         
-        from database import get_db_session
-        from models.db_models import Task
+        from backend.database import get_db_session
+        from backend.models.db_models import Task
         
         try:
             with get_db_session() as session:
