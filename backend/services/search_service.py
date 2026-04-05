@@ -9,7 +9,7 @@ from tavily import TavilyClient
 from tenacity import retry, stop_after_attempt, wait_exponential, retry_if_exception_type
 
 from backend.config import get_settings
-from models.schemas import SearchResult
+from backend.models.schemas import SearchResult
 
 logger = logging.getLogger(__name__)
 settings = get_settings()
