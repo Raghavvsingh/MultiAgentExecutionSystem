@@ -6,9 +6,9 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from config import get_settings
-from database import init_db, check_db_connection
-from routes.analysis import router as analysis_router
+from backend.config import get_settings
+from backend.database import init_db, check_db_connection
+from backend.routes.analysis import router as analysis_router
 
 # Configure logging
 logging.basicConfig(
