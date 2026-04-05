@@ -5,7 +5,7 @@ from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
 import enum
 
-from database import Base
+from backend.database import Base
 
 
 class RunStatus(str, enum.Enum):
