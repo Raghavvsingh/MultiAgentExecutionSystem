@@ -869,6 +869,10 @@ class CoordinatorAgent(BaseAgent):
                     "entity_a": entity_a,
                     "entity_b": entity_b,
                 },
+                # Add summary for frontend compatibility (from synthesis or first task)
+                "summary": synthesis.get("final_insight") if synthesis and synthesis.get("final_insight") else (
+                    self.task_outputs.get(self.tasks[0]["id"], {}).get("summary", "") if self.tasks else ""
+                ),
                 # V17: Use synthesis table instead of per-task table
                 "table": final_table_from_synthesis if final_table_from_synthesis else None,
                 "key_insight": synthesis.get("final_insight") if synthesis else None,

@@ -5,7 +5,7 @@ from typing import Dict, Any, Optional, List
 import time
 import asyncio
 
-from tavily import TavilyClient, AsyncTavilyClient
+from tavily import TavilyClient
 from tenacity import retry, stop_after_attempt, wait_exponential, retry_if_exception_type
 
 from config import get_settings
@@ -27,16 +27,8 @@ class SearchService:
     
     def __init__(self):
         self.client = TavilyClient(api_key=settings.tavily_api_key)
-        self._async_client = None  # Lazy init for async client
         self.total_searches = 0
         self.search_timeout = 10  # 10 second timeout - shorter for faster fallback
-    
-    @property
-    def async_client(self):
-        """Lazy initialize async client to ensure it's created in async context."""
-        if self._async_client is None:
-            self._async_client = AsyncTavilyClient(api_key=settings.tavily_api_key)
-        return self._async_client
     
     @retry(
         stop=stop_after_attempt(2),
@@ -68,48 +60,25 @@ class SearchService:
             
             logger.info(f"Tavily search: {query[:60]}...")
             
-            # Try async client first with timeout
+            # Use sync client via executor (tavily 0.3.3 doesn't have async support)
             response = None
             try:
+                loop = asyncio.get_running_loop()
                 response = await asyncio.wait_for(
-                    self.async_client.search(**kwargs),
+                    loop.run_in_executor(None, lambda: self.client.search(**kwargs)),
                     timeout=self.search_timeout
                 )
-                logger.info(f"Async search completed")
+                logger.info(f"Search completed")
             except asyncio.CancelledError:
                 # Critical: propagate cancellation from outer timeout
                 logger.warning(f"Search cancelled by outer timeout")
                 raise
             except asyncio.TimeoutError:
-                logger.warning(f"Tavily async search timed out after {self.search_timeout}s, trying sync...")
-                # Fallback to sync client via executor
-                try:
-                    loop = asyncio.get_running_loop()
-                    response = await asyncio.wait_for(
-                        loop.run_in_executor(None, lambda: self.client.search(**kwargs)),
-                        timeout=self.search_timeout
-                    )
-                    logger.info(f"Sync fallback search completed")
-                except asyncio.CancelledError:
-                    raise
-                except Exception as e:
-                    logger.error(f"Sync fallback also failed: {e}")
-                    return {"results": [], "query": query, "error": "timeout"}
+                logger.error(f"Tavily search timed out after {self.search_timeout}s")
+                return {"results": [], "query": query, "error": "timeout"}
             except Exception as e:
-                logger.error(f"Tavily async search error: {str(e)}")
-                # Try sync fallback
-                try:
-                    loop = asyncio.get_running_loop()
-                    response = await asyncio.wait_for(
-                        loop.run_in_executor(None, lambda: self.client.search(**kwargs)),
-                        timeout=self.search_timeout
-                    )
-                    logger.info(f"Sync fallback search completed after async error")
-                except asyncio.CancelledError:
-                    raise
-                except Exception as e2:
-                    logger.error(f"Sync fallback also failed: {e2}")
-                    return {"results": [], "query": query, "error": str(e)}
+                logger.error(f"Tavily search error: {str(e)}")
+                return {"results": [], "query": query, "error": str(e)}
             
             if response is None:
                 return {"results": [], "query": query, "error": "No response"}

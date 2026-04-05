@@ -341,11 +341,11 @@ async def start_analysis(request: AnalysisRequest):
                 # Update run status to failed in database
                 try:
                     with get_db_session() as session:
-                        run = session.query(Run).filter(Run.id == run_id).first()
+                        result = session.execute(select(Run).where(Run.id == run_id))
+                        run = result.scalar_one_or_none()
                         if run:
                             run.status = RunStatus.FAILED.value
                             run.final_report = f"Analysis failed: {str(e)}"
-                            session.commit()
                 except Exception as db_error:
                     logger.error(f"Failed to update run status: {db_error}")
         

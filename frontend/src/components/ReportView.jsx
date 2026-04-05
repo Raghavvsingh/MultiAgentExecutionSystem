@@ -445,9 +445,11 @@ function ReportView() {
       })
     : 'N/A';
 
-  // Get executive summary from first task or final output
-  const executiveSummary = finalOutput.summary || 
-    (taskEntries[0] && taskEntries[0][1]?.output?.summary) ||
+  // Get executive summary from multiple fallback sources
+  const executiveSummary = 
+    finalOutput.summary ||  // Primary: from final_output
+    report.executive_summary ||  // Secondary: from top-level report
+    (taskEntries[0] && taskEntries[0][1]?.output?.summary) ||  // Tertiary: from first task
     'Analysis summary not available.';
 
   // Get main key insight
