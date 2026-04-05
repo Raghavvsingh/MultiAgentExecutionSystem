@@ -20,7 +20,7 @@ from models.schemas import (
     AnalysisCaseType,
 )
 from services.cost_tracker import get_cost_tracker
-from config import get_settings
+from backend.config import get_settings
 
 logger = logging.getLogger(__name__)
 settings = get_settings()
