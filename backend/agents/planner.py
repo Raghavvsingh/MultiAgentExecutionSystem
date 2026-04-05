@@ -8,7 +8,7 @@ import re
 from agents.base_agent import BaseAgent
 from models.schemas import TaskPlan, PlannedTask, GoalType, AnalysisCaseType
 from agents.greybox_prompts import detect_case_type
-from config import get_settings
+from backend.config import get_settings
 
 logger = logging.getLogger(__name__)
 settings = get_settings()
