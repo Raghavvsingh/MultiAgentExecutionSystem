@@ -25,7 +25,7 @@ async def lifespan(app: FastAPI):
     """Application lifespan handler."""
     # Startup
     logger.info("Starting OrchestAI...")
-    
+
     # Check database connection
     db_ok = check_db_connection()
     if db_ok:
@@ -33,9 +33,9 @@ async def lifespan(app: FastAPI):
         init_db()
     else:
         logger.error("Database connection failed!")
-    
+
     yield
-    
+
     # Shutdown
     logger.info("Shutting down OrchestAI...")
 
@@ -47,10 +47,10 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
-# Configure CORS
+# ✅ CORS FIX (important for Vercel)
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:3000", "http://localhost:5173", "*"],
+    allow_origins=["*"],  # allow all (safe for demo)
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -83,12 +83,12 @@ async def health():
 
 if __name__ == "__main__":
     import uvicorn
-    
-    # Use settings from config
+
+    # ✅ FIXED path (VERY IMPORTANT)
     uvicorn.run(
-        "main:app",
+        "backend.main:app",
         host=settings.host,
-        port=3001,  # Override port to 3001 for frontend compatibility
+        port=3001,
         reload=settings.debug,
-        log_level="info"
+        log_level="info",
     )
