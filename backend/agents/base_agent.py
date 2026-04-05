@@ -5,9 +5,8 @@ from abc import ABC, abstractmethod
 from typing import Dict, Any, Optional
 from datetime import datetime
 
-from services.llm_service import get_llm_service, LLMService
-from services.cost_tracker import get_cost_tracker, CostTracker
-
+from backend.services.llm_service import get_llm_service, LLMService
+from backend.services.cost_tracker import get_cost_tracker, CostTracker
 logger = logging.getLogger(__name__)
 
 
