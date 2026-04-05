@@ -12,7 +12,7 @@ import threading
 from fastapi import APIRouter, HTTPException, WebSocket, WebSocketDisconnect
 from sqlalchemy import select, update, and_
 
-from models.schemas import (
+from backend.models.schemas import (
     AnalysisRequest,
     AnalysisResponse,
     RunStatusResponse,
@@ -23,10 +23,19 @@ from models.schemas import (
     LogEntry,
     RunStatusEnum,
 )
-from models.db_models import Run, Task, Log, CostTracking, TaskStatus, RunStatus
-from database import get_db_session
-from agents.coordinator import CoordinatorAgent
-from services.cost_tracker import get_cost_tracker, remove_cost_tracker
+
+from backend.models.db_models import (
+    Run,
+    Task,
+    Log,
+    CostTracking,
+    TaskStatus,
+    RunStatus,
+)
+
+from backend.database import get_db_session
+from backend.agents.coordinator import CoordinatorAgent
+from backend.services.cost_tracker import get_cost_tracker, remove_cost_tracker
 
 logger = logging.getLogger(__name__)
 
