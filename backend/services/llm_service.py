@@ -15,9 +15,8 @@ from tenacity import (
     before_sleep_log,
 )
 
-from config import get_settings
-from services.llm_cache import get_llm_cache  # COST OPTIMIZATION: Add caching
-
+from backend.config import get_settings
+from backend.services.llm_cache import get_llm_cache  # COST OPTIMIZATION: Add caching
 logger = logging.getLogger(__name__)
 settings = get_settings()
 
