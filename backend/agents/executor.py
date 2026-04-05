@@ -1,14 +1,19 @@
 """Executor Agent - RAG pipeline for task execution (v12 - MASTER GREYBOX)."""
-
 import json
 from typing import Dict, Any, Optional, List
 import logging
 import re
 
-from agents.base_agent import BaseAgent
-from services.search_service import get_search_service, SearchService
-from models.schemas import ExecutorOutput, GreyboxTaskOutput, AnalysisCaseType
-from agents.greybox_prompts import (
+from backend.agents.base_agent import BaseAgent
+from backend.services.search_service import get_search_service, SearchService
+
+from backend.models.schemas import (
+    ExecutorOutput,
+    GreyboxTaskOutput,
+    AnalysisCaseType,
+)
+
+from backend.agents.greybox_prompts import (
     MASTER_GREYBOX_SYSTEM_PROMPT,
     FINAL_VERDICT_SYSTEM_PROMPT,
     PATCH_SYSTEM_PROMPT,
@@ -28,7 +33,7 @@ from agents.greybox_prompts import (
     validate_per_task_comparison,
     check_insight_repetition,
     get_task_focus,
-    get_task_focus_for_context,  # NEW: Context-aware task focus
+    get_task_focus_for_context,
 )
 
 logger = logging.getLogger(__name__)
