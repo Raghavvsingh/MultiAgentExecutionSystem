@@ -10,24 +10,24 @@ const api = axios.create({
 });
 
 export const analysisApi = {
-  // ✅ FIXED: added /analysis prefix
+  // ✅ CORRECT ROUTES (match backend /api prefix)
   startAnalysis: async (goal) => {
-    const response = await api.post('/analysis/start-analysis', { goal });
+    const response = await api.post('/api/start-analysis', { goal });
     return response.data;
   },
 
   getStatus: async (runId) => {
-    const response = await api.get(`/analysis/status/${runId}`);
+    const response = await api.get(`/api/status/${runId}`);
     return response.data;
   },
 
   getResult: async (runId) => {
-    const response = await api.get(`/analysis/result/${runId}`);
+    const response = await api.get(`/api/result/${runId}`);
     return response.data;
   },
 
   approveRun: async (runId, approved, feedback = null, edits = null) => {
-    const response = await api.post(`/analysis/approve/${runId}`, {
+    const response = await api.post(`/api/approve/${runId}`, {
       approved,
       feedback,
       edits,
@@ -36,23 +36,22 @@ export const analysisApi = {
   },
 
   getLogs: async (runId, limit = 100, offset = 0) => {
-    const response = await api.get(`/analysis/logs/${runId}`, {
+    const response = await api.get(`/api/logs/${runId}`, {
       params: { limit, offset },
     });
     return response.data;
   },
 
   resumeRun: async (runId) => {
-    const response = await api.post(`/analysis/resume/${runId}`);
+    const response = await api.post(`/api/resume/${runId}`);
     return response.data;
   },
 };
 
-
-// ✅ FIXED WebSocket (Railway + Vercel compatible)
+// ✅ WebSocket FIX (match /api/ws)
 export const createWebSocket = (runId, onMessage, onError) => {
   const base = import.meta.env.VITE_API_URL.replace('https://', 'wss://');
-  const wsUrl = `${base}/analysis/ws/${runId}`;
+  const wsUrl = `${base}/api/ws/${runId}`;
 
   const ws = new WebSocket(wsUrl);
 
