@@ -5,9 +5,16 @@ from typing import Dict, Any, Optional, List
 import logging
 import re
 
-from agents.base_agent import BaseAgent
-from models.schemas import TaskPlan, PlannedTask, GoalType, AnalysisCaseType
-from agents.greybox_prompts import detect_case_type
+from backend.agents.base_agent import BaseAgent
+
+from backend.models.schemas import (
+    TaskPlan,
+    PlannedTask,
+    GoalType,
+    AnalysisCaseType,
+)
+
+from backend.agents.greybox_prompts import detect_case_type
 from backend.config import get_settings
 
 logger = logging.getLogger(__name__)
